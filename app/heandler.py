@@ -773,10 +773,6 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
         else:
             animal_caption += "⚠️ Контактная информация не указана\n"
         
-        # Добавляем статус избранного
-        if is_liked:
-            animal_caption += f"\n⭐ <b>В вашем избранном</b>"
-        
         # Отправляем фото животного с кнопками лайка
         if animal.telegram_file_id:
             await message.answer_photo(
