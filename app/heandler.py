@@ -840,9 +840,7 @@ async def handle_like(callback: CallbackQuery, bot: Bot, state: FSMContext):
             print("DEBUG: Keyboard updated successfully")
         except Exception as e:
             print(f"DEBUG: Error updating keyboard: {e}")
-        
-        # Всплывающее уведомление посередине экрана
-        await callback.answer("❤️ Добавлено в избранное!", show_alert=True)
+
     else:
         await callback.answer("⚠️ Уже в избранном", show_alert=True)
 
@@ -870,8 +868,6 @@ async def handle_unlike(callback: CallbackQuery, bot: Bot, state: FSMContext):
         except:
             pass  # Если не удалось обновить кнопку, ничего страшного
         
-        # Всплывающее уведомление посередине экрана
-        await callback.answer("💔 Убрано из избранного", show_alert=True)
     else:
         await callback.answer("⚠️ Не было в избранном", show_alert=True)
 
