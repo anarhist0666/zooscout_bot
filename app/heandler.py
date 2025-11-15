@@ -1083,7 +1083,6 @@ async def handle_delete_animal(callback: CallbackQuery, bot: Bot):
     if success:
         # Удаляем сообщение с анкетой
         await callback.message.delete()
-        await callback.answer("✅ Анкета успешно удалена")
         
         # Отправляем подтверждение
         await callback.message.answer(
@@ -1112,7 +1111,6 @@ async def handle_delete_physical_entity(callback: CallbackQuery, bot: Bot):
     if success:
         # Удаляем сообщение с анкетой
         await callback.message.delete()
-        await callback.answer("✅ Анкета физического лица успешно удалена")
         
         # Отправляем подтверждение
         await callback.message.answer(
@@ -1141,7 +1139,6 @@ async def handle_delete_organization(callback: CallbackQuery, bot: Bot):
     if success:
         # Удаляем сообщение с анкетой
         await callback.message.delete()
-        await callback.answer("✅ Анкета организации успешно удалена")
         
         # Отправляем подтверждение
         await callback.message.answer(
