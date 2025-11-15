@@ -212,7 +212,7 @@ async def fill_form_menu_handler(message: Message, state: FSMContext):
 @router.message(F.text == "Создание нового профиля")
 async def create_new_profile(message: Message, state: FSMContext):
     await message.answer(
-        text='Кем вы представляетесь?', 
+        text='Вы представляете физическое лицо или организацию?', 
         reply_markup=kb.main
     )
 
