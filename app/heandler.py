@@ -609,50 +609,82 @@ async def show_my_profiles(message: Message, bot: Bot):
         await asyncio.sleep(0.5)
     
     # Отправляем животных с кнопками удаления
+    # Отправляем животных с кнопками удаления
     if animals:
         await message.answer("🐾 Ваши питомцы:")
         for animal in animals:
             try:
-                if animal.telegram_file_id:
-                    await message.answer_photo(
-                        photo=animal.telegram_file_id,
-                        caption=(
-                            f"🐾 Животное\n"
-                            f"Категория: {animal.category}\n"
-                            f"Имя: {animal.name}\n"
-                            f"Описание: {animal.description}\n"
-                            f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}"
-                        ),
-                        reply_markup=kb.get_delete_keyboard(animal.id)
-                    )
-                else:
-                    photo_file = BufferedInputFile(
-                        animal.photo_data, 
-                        filename=f"{animal.name}.jpg"
-                    )
-                    await message.answer_photo(
-                        photo=photo_file,
-                        caption=(
-                            f"🐾 Животное\n"
-                            f"Категория: {animal.category}\n"
-                            f"Имя: {animal.name}\n"
-                            f"Описание: {animal.description}\n"
-                            f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}"
-                        ),
-                        reply_markup=kb.get_delete_keyboard(animal.id)
-                    )
-            except Exception as e:
-                await message.answer(
+                # Формируем расширенное описание с фильтрами
+                caption = (
                     f"🐾 Животное\n"
                     f"Категория: {animal.category}\n"
                     f"Имя: {animal.name}\n"
                     f"Описание: {animal.description}\n"
-                    f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-                    f"⚠️ Фото недоступно",
+                )
+                
+                # Добавляем информацию о фильтрах, если они есть
+                if animal.city:
+                    caption += f"🏙️ Город: {animal.city}\n"
+                if animal.gender:
+                    caption += f"♂️ Пол: {animal.gender}\n"
+                if animal.age_group:
+                    caption += f"🐣 Возраст: {animal.age_group}\n"
+                if animal.size:
+                    caption += f"📏 Размер: {animal.size}\n"
+                
+                caption += f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}"
+                
+                if animal.telegram_file_id:
+                    await message.answer_photo(
+                        photo=animal.telegram_file_id,
+                        caption=caption,
+                        reply_markup=kb.get_delete_keyboard(animal.id)
+                    )
+                else:
+                    # Пробуем использовать photo_data как fallback
+                    if animal.photo_data:
+                        photo_file = BufferedInputFile(
+                            animal.photo_data, 
+                            filename=f"{animal.name}.jpg"
+                        )
+                        await message.answer_photo(
+                            photo=photo_file,
+                            caption=caption,
+                            reply_markup=kb.get_delete_keyboard(animal.id)
+                        )
+                    else:
+                        # Если фото вообще нет, отправляем только текст
+                        await message.answer(
+                            caption + "\n\n⚠️ Фото недоступно",
+                            reply_markup=kb.get_delete_keyboard(animal.id)
+                        )
+            except Exception as e:
+                print(f"Ошибка при отображении животного {animal.id}: {e}")
+                # Fallback: отправляем текстовую версию
+                caption = (
+                    f"🐾 Животное\n"
+                    f"Категория: {animal.category}\n"
+                    f"Имя: {animal.name}\n"
+                    f"Описание: {animal.description}\n"
+                )
+                
+                if animal.city:
+                    caption += f"🏙️ Город: {animal.city}\n"
+                if animal.gender:
+                    caption += f"♂️ Пол: {animal.gender}\n"
+                if animal.age_group:
+                    caption += f"🐣 Возраст: {animal.age_group}\n"
+                if animal.size:
+                    caption += f"📏 Размер: {animal.size}\n"
+                
+                caption += f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+                caption += "⚠️ Фото недоступно"
+                
+                await message.answer(
+                    caption,
                     reply_markup=kb.get_delete_keyboard(animal.id)
                 )
-            await asyncio.sleep(0.5)
-
+        await asyncio.sleep(0.5)
 
 # Обработчик кнопки "Поиск" - основное меню поиска
 @router.message(F.text == "Поиск")
@@ -1161,10 +1193,18 @@ async def show_favorites(message: Message, bot: Bot):
                 f"⭐ Избранное (#{i})\n\n"
                 f"*Животное:*\n"
                 f"• Имя: {animal.name}\n"
-                f"• Категория: {animal.category}\n"
-                f"• Описание: {animal.description}\n\n"
-            )
-            
+                f"• Категория: {animal.category}\n")
+            if getattr(animal, 'city', None):
+                animal_caption += f"• Город: {animal.city}\n"
+            if getattr(animal, 'size', None):
+                animal_caption += f"• Размер: {animal.size}\n"
+            if getattr(animal, 'age', None):
+                animal_caption += f"• Возраст: {animal.age}\n"
+            if getattr(animal, 'breed', None):
+                animal_caption += f"• Порода: {animal.breed}\n"
+            if getattr(animal, 'gender', None):
+                animal_caption += f"• Пол: {animal.gender}\n"
+            animal_caption += f"• Описание: {animal.description}\n\n"
             # Добавляем информацию о владельце
             animal_caption += f"*Контактная информация:*\n"
             
@@ -1195,6 +1235,7 @@ async def show_favorites(message: Message, bot: Bot):
             
             # Отправляем фото животного с кнопкой удаления из избранного
             if animal.telegram_file_id:
+                print(f"📸 Отправляем фото через telegram_file_id: {animal.telegram_file_id}")
                 await message.answer_photo(
                     photo=animal.telegram_file_id,
                     caption=animal_caption,
@@ -1202,27 +1243,46 @@ async def show_favorites(message: Message, bot: Bot):
                     reply_markup=get_remove_favorite_keyboard(favorite_id)
                 )
             else:
-                photo_file = BufferedInputFile(
-                    animal.photo_data, 
-                    filename=f"{animal.name}.jpg"
-                )
-                await message.answer_photo(
-                    photo=photo_file,
-                    caption=animal_caption,
-                    parse_mode='Markdown',
-                    reply_markup=get_remove_favorite_keyboard(favorite_id)
-                )
+                print(f"📸 Отправляем фото через photo_data, размер: {len(animal.photo_data) if animal.photo_data else 'Нет данных'}")
+                
+                if animal.photo_data and len(animal.photo_data) > 0:
+                    photo_file = BufferedInputFile(
+                        animal.photo_data, 
+                        filename=f"{animal.name}.jpg"
+                    )
+                    await message.answer_photo(
+                        photo=photo_file,
+                        caption=animal_caption,
+                        parse_mode='Markdown',
+                        reply_markup=get_remove_favorite_keyboard(favorite_id)
+                    )
+                else:
+                    print("❌ Нет данных фото, показываем текстовую версию")
         except Exception as e:
-            await message.answer(
+            print(f"❌ Ошибка при показе избранного: {e}")  # ← ДОБАВЬ ЭТУ СТРОКУ
+            error_caption = (
                 f"🐾 Животное (#{i})\n"
                 f"Имя: {animal.name}\n"
                 f"Категория: {animal.category}\n"
-                f"Описание: {animal.description}\n\n"
-                f"⚠️ Фото недоступно\n\n"
-                f"⭐ Избранное",
+            )
+            if getattr(animal, 'city', None):
+                error_caption += f"Город: {animal.city}\n"
+            if getattr(animal, 'size', None):
+                error_caption += f"Размер: {animal.size}\n"
+            if getattr(animal, 'age', None):
+                error_caption += f"Возраст: {animal.age}\n"
+            if getattr(animal, 'breed', None):
+                error_caption += f"Порода: {animal.breed}\n"
+            if getattr(animal, 'gender', None):
+                error_caption += f"Пол: {animal.gender}\n"
+            
+            error_caption += f"Описание: {animal.description}\n\n"
+            error_caption += f"⚠️ Фото недоступно\n\n"
+            error_caption += f"⭐ Избранное"
+            await message.answer(
+                error_caption,
                 reply_markup=get_remove_favorite_keyboard(favorite_id)
             )
-        
         await asyncio.sleep(0.5)
 
 # Обработчик для кнопки "Удалить из избранного"
