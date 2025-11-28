@@ -150,12 +150,22 @@ async def download_photo_as_bytes(bot, file_id: str) -> bytes:
 # Функция получения всех животных пользователя с их ID
 async def get_user_animals_with_photos_and_ids(telegram_id: int):
     async with async_session() as session:
-        result = await session.execute(
-            select(Animal)
-            .join(User)
-            .where(User.telegram_id == telegram_id)
+        # Находим пользователя
+        user_result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
         )
-        return result.scalars().all()
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            return []
+        
+        # Находим всех животных пользователя БЕЗ JOIN (чтобы избежать дубликатов)
+        animals_result = await session.execute(
+            select(Animal).where(Animal.user_id == user.id)
+        )
+        animals = animals_result.scalars().all()
+        
+        return list(animals)
 
 # Функция получения всех животных для поочередного показа
 async def get_all_animals_with_owners():
