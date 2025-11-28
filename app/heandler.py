@@ -2,7 +2,7 @@
 from aiogram.filters import Command, CommandStart
 from aiogram import F, Router, Bot
 from database.models import Animal
-from aiogram.types import Message, CallbackQuery, BufferedInputFile, PhotoSize, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, PhotoSize, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import asyncio
@@ -34,6 +34,14 @@ from database.db_operations import (
     get_animals_with_filters
 )
 import app.key as kb
+import re
+
+def escape_markdown(text: str) -> str:
+    """Экранирует символы Markdown в тексте"""
+    if text is None:
+        return ""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', str(text))
 
 # Создание роутера для обработки сообщений
 router = Router()
@@ -362,6 +370,7 @@ async def process_description(message: Message, state: FSMContext):
     await message.answer("→ Загрузите качественное фото животного:")
 
 # Обработчик фото животного - теперь с логикой выбора профиля
+# Обработчик фото животного - теперь с логикой выбора профиля
 @router.message(AnimalForm.photo, F.photo)
 async def process_photo(message: Message, state: FSMContext, bot: Bot):
     if message.text == 'Отмена':
@@ -398,7 +407,7 @@ async def process_photo(message: Message, state: FSMContext, bot: Bot):
         await state.clear()
         return
     elif total_profiles == 1:
-        # Сохраняем данные во временное хранилище с информацией о профиле
+        # Если профиль всего один - автоматически привязываем к нему
         profile_id = physical_entities[0].id if physical_entities else organizations[0].id
         profile_type = "physical" if physical_entities else "organization"
         
@@ -410,7 +419,6 @@ async def process_photo(message: Message, state: FSMContext, bot: Bot):
             'photo_data': photo_bytes,
             'telegram_file_id': file_id,
             'user_id': user.id,
-            # Сохраняем информацию о профиле для будущего создания
             'profile_id': profile_id,
             'profile_type': profile_type
         }
@@ -422,10 +430,54 @@ async def process_photo(message: Message, state: FSMContext, bot: Bot):
             "Введите название города:",
             reply_markup=kb.cancel_kb
         )
+    else:
+        # Если несколько профилей - предлагаем выбрать
+        user_data = await state.get_data()
+        animal_temp_data[message.from_user.id] = {
+            'category': user_data["category"],
+            'name': user_data["name"],
+            'description': user_data["description"],
+            'photo_data': photo_bytes,
+            'telegram_file_id': file_id,
+            'user_id': user.id,
+            # Пока не выбрано
+            'profile_id': None,
+            'profile_type': None
+        }
+        
+        # Создаем клавиатуру для выбора профиля
+        keyboard_buttons = []
+        
+        # Добавляем физические лица
+        for entity in physical_entities:
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=f"👤 {entity.name}",
+                    callback_data=f"attach_physical_{entity.id}"
+                )
+            ])
+        
+        # Добавляем организации
+        for org in organizations:
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=f"🏢 {org.name}",
+                    callback_data=f"attach_organization_{org.id}"
+                )
+            ])
+        
+        profile_selection_keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await message.answer(
+            "👥 Выберите профиль, к которому привязать это животное:",
+            reply_markup=profile_selection_keyboard
+        )
 
 # Обработчик выбора профиля для привязки
 @router.callback_query(F.data.startswith('attach_'))
-async def handle_profile_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
+# Обработчик выбора профиля для привязки животного
+@router.callback_query(F.data.startswith('attach_'))
+async def handle_profile_selection(callback: CallbackQuery, state: FSMContext):
     # Извлекаем данные из callback
     data_parts = callback.data.split('_')
     profile_type = data_parts[1]  # "physical" или "organization"
@@ -439,48 +491,23 @@ async def handle_profile_selection(callback: CallbackQuery, state: FSMContext, b
         await state.clear()
         return
     
-    animal_data = animal_temp_data[user_id]
+    # Обновляем временные данные с выбранным профилем
+    animal_temp_data[user_id]['profile_id'] = profile_id
+    animal_temp_data[user_id]['profile_type'] = profile_type
     
-    # Создаем животное с привязкой к выбранному профилю
-    animal = await create_animal(
-        user_id=animal_data['user_id'],
-        category=animal_data['category'],
-        name=animal_data['name'],
-        description=animal_data['description'],
-        photo_data=animal_data['photo_data'],
-        telegram_file_id=animal_data['telegram_file_id'],
-        physical_entity_id=profile_id if profile_type == "physical" else None,
-        organization_id=profile_id if profile_type == "organization" else None
-    )
-
-    # Формируем сообщение о привязке
-    profile_info = ""
-    if profile_type == "physical":
-        physical_entities = await get_user_physical_entities(user_id)
-        for entity in physical_entities:
-            if entity.id == profile_id:
-                profile_info = f"👤 Привязано к физ. лицу: {entity.name}"
-                break
-    else:
-        organizations = await get_user_organizations(user_id)
-        for org in organizations:
-            if org.id == profile_id:
-                profile_info = f"🏢 Привязано к организации: {org.name}"
-                break
-
-    # Удаляем временные данные
-    del animal_temp_data[user_id]
-    await state.clear()
-
-    # Отправляем подтверждение
-    await callback.message.answer_photo(
-        photo=animal_data['telegram_file_id'],
-        caption=f"✅ Анкета питомца опубликована!\n\n"
-                f"Теперь вашего питомца увидят пользователи в поиске. Хорошего дня!",
-        reply_markup=kb.search
+    # Удаляем сообщение с выбором профиля
+    await callback.message.delete()
+    
+    # Переходим к сбору данных для фильтров
+    await state.set_state(AnimalForm.city)
+    await callback.message.answer(
+        "✅ Профиль выбран!\n\n"
+        "🏙️ Шаг 1/4: В каком городе находится животное?\n\n"
+        "Введите название города:",
+        reply_markup=kb.cancel_kb
     )
     
-    await callback.answer("✅ Анкета животного создана!")
+    await callback.answer()
 
 # Обработчики некорректного ввода при заполнении анкеты животного
 @router.message(AnimalForm.category)
@@ -610,11 +637,12 @@ async def show_my_profiles(message: Message, bot: Bot):
     
     # Отправляем животных с кнопками удаления
     # Отправляем животных с кнопками удаления
+    # Отправляем животных с кнопками удаления
     if animals:
         await message.answer("🐾 Ваши питомцы:")
         for animal in animals:
             try:
-                # Формируем расширенное описание с фильтрами
+                # Формируем расширенное описание с фильтрами и информацией о профиле
                 caption = (
                     f"🐾 Животное\n"
                     f"Категория: {animal.category}\n"
@@ -631,6 +659,22 @@ async def show_my_profiles(message: Message, bot: Bot):
                     caption += f"🐣 Возраст: {animal.age_group}\n"
                 if animal.size:
                     caption += f"📏 Размер: {animal.size}\n"
+                
+                # Добавляем информацию о привязанном профиле
+                if animal.physical_entity_id:
+                    # Ищем привязанное физическое лицо
+                    for entity in physical_entities:
+                        if entity.id == animal.physical_entity_id:
+                            caption += f"👤 Привязано к: {entity.name}\n"
+                            break
+                elif animal.organization_id:
+                    # Ищем привязанную организацию
+                    for org in organizations:
+                        if org.id == animal.organization_id:
+                            caption += f"🏢 Привязано к: {org.name}\n"
+                            break
+                else:
+                    caption += "🔗 Профиль: Не привязан\n"
                 
                 caption += f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}"
                 
@@ -677,6 +721,14 @@ async def show_my_profiles(message: Message, bot: Bot):
                 if animal.size:
                     caption += f"📏 Размер: {animal.size}\n"
                 
+                # Информация о профиле для fallback версии
+                if animal.physical_entity_id:
+                    caption += f"👤 Привязано к физ. лицу (ID: {animal.physical_entity_id})\n"
+                elif animal.organization_id:
+                    caption += f"🏢 Привязано к организации (ID: {animal.organization_id})\n"
+                else:
+                    caption += "🔗 Профиль: Не привязан\n"
+                
                 caption += f"Создано: {animal.created_at.strftime('%d.%m.%Y %H:%M')}\n"
                 caption += "⚠️ Фото недоступно"
                 
@@ -685,7 +737,6 @@ async def show_my_profiles(message: Message, bot: Bot):
                     reply_markup=kb.get_delete_keyboard(animal.id)
                 )
         await asyncio.sleep(0.5)
-
 # Обработчик кнопки "Поиск" - основное меню поиска
 @router.message(F.text == "Поиск")
 async def search_menu(message: Message, state: FSMContext):
@@ -902,6 +953,7 @@ async def process_filter_size(message: Message, state: FSMContext):
 
 # Функция для показа следующей анкеты
 async def show_next_animal(message: Message, bot: Bot, state: FSMContext):
+
     # Получаем данные из состояния
     data = await state.get_data()
     current_index = data.get('current_index', 0)
@@ -1005,19 +1057,22 @@ async def back_to_main_from_complete(message: Message, state: FSMContext):
     )
 
 async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, show_category: bool = False):
-    animal = animal_data['animal']
-    user = animal_data['user']
-    physical_entities = animal_data['physical_entities']
-    organizations = animal_data['organizations']
-    
-    # Проверяем, находится ли животное в избранном у пользователя
-    is_liked = await is_animal_in_favorites(message.from_user.id, animal.id)
-    
     try:
-        # Формируем описание животного
+        # Добавляем небольшую задержку
+        await asyncio.sleep(0.5)
+        
+        animal = animal_data['animal']
+        user = animal_data['user']
+        physical_entities = animal_data['physical_entities']
+        organizations = animal_data['organizations']
+        
+        # Проверяем, находится ли животное в избранном у пользователя
+        is_liked = await is_animal_in_favorites(message.from_user.id, animal.id)
+        
+        # Формируем описание животного с HTML разметкой
         animal_caption = (
             f"🐾 Найден питомец!\n\n"
-            f"*Животное:*\n"
+            f"<b>Животное:</b>\n"
             f"• Имя: {animal.name}\n"
         )
         
@@ -1026,6 +1081,7 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
             animal_caption += f"• Категория: {animal.category}\n"
         
         animal_caption += f"• Описание: {animal.description}\n\n"
+        
         filter_info = []
         if animal.city:
             filter_info.append(f"🏙️ Город: {animal.city}")
@@ -1037,18 +1093,18 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
             filter_info.append(f"📏 Размер: {animal.size}")
         
         if filter_info:
-            animal_caption += "*📋 Дополнительная информация:*\n"
+            animal_caption += "<b>📋 Дополнительная информация:</b>\n"
             animal_caption += "\n".join([f"• {info}" for info in filter_info])
             animal_caption += "\n\n"
         
         # Добавляем информацию о владельце
-        animal_caption += f"*Контактная информация владельца:*\n"
+        animal_caption += f"<b>Контактная информация владельца:</b>\n"
         
         # Если есть привязанные физические лица
         if physical_entities and physical_entities[0]:
             entity = physical_entities[0]
             animal_caption += (
-                f"👤 *Физ. лицо*\n"
+                f"👤 <b>Физ. лицо</b>\n"
                 f"• ФИО: {entity.name}\n"
                 f"• Возраст: {entity.age}\n"
                 f"• Телефон: {entity.phone}\n"
@@ -1059,7 +1115,7 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
         elif organizations and organizations[0]:
             org = organizations[0]
             animal_caption += (
-                f"🏢 *Организация*\n"
+                f"🏢 <b>Организация</b>\n"
                 f"• Название: {org.name}\n"
                 f"• Адрес: {org.address}\n"
                 f"• Телефон: {org.phone}\n"
@@ -1069,13 +1125,12 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
         else:
             animal_caption += "⚠️ Контактная информация не указана\n"
         
-        
         # Отправляем фото животного с кнопками лайка
         if animal.telegram_file_id:
             await message.answer_photo(
                 photo=animal.telegram_file_id,
                 caption=animal_caption,
-                parse_mode='Markdown',
+                parse_mode='HTML',  # ← ИСПОЛЬЗУЕМ HTML
                 reply_markup=get_like_keyboard(animal.id, is_liked)
             )
         else:
@@ -1086,17 +1141,40 @@ async def send_animal_profile(message: Message, animal_data: dict, bot: Bot, sho
             await message.answer_photo(
                 photo=photo_file,
                 caption=animal_caption,
-                parse_mode='Markdown',
+                parse_mode='HTML',  # ← ИСПОЛЬЗУЕМ HTML
                 reply_markup=get_like_keyboard(animal.id, is_liked)
             )
             
     except Exception as e:
-        await message.answer(
-            f"Произошла ошибка при поиске: {str(e)}",
-            reply_markup=kb.search_actions
-        )
+        print(f"Ошибка в send_animal_profile: {e}")
+        # Пробуем отправить без разметки в случае ошибки
+        try:
+            simple_caption = f"🐾 Найден питомец!\n\nИмя: {animal.name}\nКатегория: {animal.category}\nОписание: {animal.description}"
+            if animal.telegram_file_id:
+                await message.answer_photo(
+                    photo=animal.telegram_file_id,
+                    caption=simple_caption,
+                    reply_markup=get_like_keyboard(animal.id, is_liked)
+                )
+            else:
+                photo_file = BufferedInputFile(
+                    animal.photo_data, 
+                    filename=f"{animal.name}.jpg"
+                )
+                await message.answer_photo(
+                    photo=photo_file,
+                    caption=simple_caption,
+                    reply_markup=get_like_keyboard(animal.id, is_liked)
+                )
+        except Exception as fallback_error:
+            await message.answer(
+                f"Произошла ошибка при показе анкеты: {str(e)}",
+                reply_markup=kb.search_actions
+            )
+        return
     
-    # Отправляем отдельное сообщение с кнопками действий
+    # Отправляем отдельное сообщение с кнопками действий с задержкой
+    await asyncio.sleep(0.3)
     await message.answer(
         "Выберите действие:",
         reply_markup=kb.search_actions
@@ -1507,6 +1585,7 @@ async def back_to_filters(message: Message, state: FSMContext):
     )
 
 # Обработчик для завершения создания анкеты после всех фильтров
+# Обработчик для завершения создания анкеты после всех фильтров
 @router.message(AnimalForm.size, F.text.in_(['📏 Маленький', '📐 Средний', '📏 Большой']))
 async def process_animal_size(message: Message, state: FSMContext, bot: Bot):
     if message.text == 'Отмена':
@@ -1560,8 +1639,6 @@ async def process_animal_size(message: Message, state: FSMContext, bot: Bot):
                 f"Теперь вашего питомца увидят пользователи в поиске. Хорошего дня!",
         reply_markup=kb.search
     )
-
-
 # Пасхалка
 @router.message(Command("alina"))
 async def alinaTraktor(message: Message):
