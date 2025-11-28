@@ -150,7 +150,8 @@ filter_size_kb = ReplyKeyboardMarkup(
 start_search_with_filters_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text='🔍 Найти по фильтрам')],
-        [KeyboardButton(text='↩️ Назад к фильтрам')]
+        [KeyboardButton(text='↩️ Назад к фильтрам')],
+        [KeyboardButton(text='В главное меню')] 
     ],
     resize_keyboard=True,
     one_time_keyboard=True
