@@ -7,7 +7,7 @@ async def main():
     await create_tables()
 
     # Создание экземпляра бота с использованием токена для авторизации в Telegram API
-    bot = Bot('8025131403:AAHVPfz7Gb9NsYPXO3ap_yGioUZHM85nAJw')
+    bot = Bot('8025131403:AAH0ZsTT2bwYCfgeL4MZ2tSwFIruRROk4-w')
     
     # Создание диспетчера - основного объекта для обработки входящих сообщений
     dp = Dispatcher()
